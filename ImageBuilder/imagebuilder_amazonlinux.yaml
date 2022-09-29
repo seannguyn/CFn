@@ -1,0 +1,124 @@
+Parameters:
+  AMIId:
+    Description: AMI ID
+    Type: String
+    Default: ami-009106e17638dcbde
+  AWSAccount:
+    Description: AWS Account
+    Type: CommaDelimitedList
+    Default: "885958473449"
+  SecurityGroups:
+    Description: Security Groups
+    Type: CommaDelimitedList
+    Default: "sg-0b3068374abcb509b"
+  InstanceRole:
+    Description: Instance Role
+    Type: CommaDelimitedList
+    Default: "EC2DescribeSecurityGroupAndParameters"
+
+Resources:
+  CustomInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: "InstanceToInstance"
+      Roles: !Ref InstanceRole # Required
+
+  CustomAMIBuildComponent:
+    Type: AWS::ImageBuilder::Component
+    Properties:
+      Name: "CustomAMIBuildComponent" # Required
+      Platform: "Linux" # Required
+      Version: "1.0.0" # Required
+      Description: "Disable firewalld if existed"
+      Data: |
+        name: 'disable firewalld'
+        description: 'disable firewalld'
+        schemaVersion: 1.0
+
+        phases:
+          - name: build
+            steps:
+              - name: InstallAWSCli
+                action: ExecuteBash
+                inputs:
+                  commands:
+                  - |
+                      #!/bin/bash 
+
+                      set -xe
+
+                      curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+                      unzip awscliv2.zip
+                      sudo ./aws/install
+
+              - name: InstallStartEnableFirewalld
+                action: ExecuteBash
+                inputs:
+                  commands:
+                  - |
+                      #!/bin/bash 
+
+                      set -xe
+
+                      if systemctl list-units --all | awk '{print $1}' | grep -q -v firewalld; then
+                        echo "......Installing firewalld......"
+                        sudo yum install firewalld -y	
+                      fi
+
+                      echo "......Start firewalld......"
+                      systemctl start firewalld
+
+                      echo "......Enable firewalld......"
+                      systemctl enable firewalld
+
+                      echo "......Status firewalld......"
+                      systemctl is-active firewalld
+
+  CustomAMIRecipe:
+    Type: AWS::ImageBuilder::ImageRecipe
+    Properties:
+      Name: "CustomAMIRecipe" # Required
+      Version: "1.0.0" # Required
+      ParentImage: !Ref AMIId # Required
+      Components: # Required
+        - ComponentArn: !Ref CustomAMIBuildComponent
+
+  CustomAMIInfra:
+    Type: AWS::ImageBuilder::InfrastructureConfiguration
+    Properties:
+      Name: "CustomAMIInfra" # Required
+      InstanceProfileName: !Ref CustomInstanceProfile # Required
+      InstanceTypes:
+        - t2.micro
+      SecurityGroupIds: !Ref SecurityGroups
+      TerminateInstanceOnFailure: false
+    DependsOn: CustomInstanceProfile
+
+  CustomAMIDistribution:
+    Type: AWS::ImageBuilder::DistributionConfiguration
+    Properties:
+      Name: 'CustomAMIDistribution' # Required
+      Distributions: # Required
+        - Region: !Ref AWS::Region
+          AmiDistributionConfiguration: 
+            Name: 'CustomAMIFirewall-{{ imagebuilder:buildDate }}'
+            LaunchPermissionConfiguration: 
+               UserIds: !Ref AWSAccount
+
+  CustomAMIImage:
+    Type: AWS::ImageBuilder::Image
+    Properties:
+      ImageRecipeArn: !Ref CustomAMIRecipe # Required
+      InfrastructureConfigurationArn: !Ref CustomAMIInfra # Required
+      DistributionConfigurationArn: !Ref CustomAMIDistribution # Required
+      ImageTestsConfiguration:
+        ImageTestsEnabled: false
+        TimeoutMinutes: 90
+
+Outputs:
+  CustomAMIID:
+    Description: "Custom AMI ID"
+    Value: !GetAtt CustomAMIImage.ImageId
+  CustomAMIName:
+    Description: "Custom AMI Name"
+    Value: !GetAtt CustomAMIImage.Name

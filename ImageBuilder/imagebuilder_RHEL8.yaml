@@ -1,0 +1,197 @@
+Parameters:
+  AMIId:
+    Description: AMI ID
+    Type: String
+    Default: ami-04cfb173b157a90ed
+  AWSAccount:
+    Description: AWS Account
+    Type: CommaDelimitedList
+    Default: "885958473449"
+  SecurityGroups:
+    Description: Security Groups
+    Type: CommaDelimitedList
+    Default: "sg-0b3068374abcb509b"
+  InstanceRole:
+    Description: Instance Role
+    Type: CommaDelimitedList
+    Default: "EC2DescribeSecurityGroupAndParameters"
+  # ========================================================
+  PythonScriptURL:
+    Description: URL to fetch python script
+    Type: String
+    Default: https://
+  # ========================================================
+  SG1:
+    Description: 
+    Type: String
+    Default: ""
+  SG2:
+    Description: 
+    Type: String
+    Default: ""
+  SG3:
+    Description: 
+    Type: String
+    Default: ""
+  SG4:
+    Description: 
+    Type: String
+    Default: ""
+  # SGAll:
+  #   Description: 
+  #   Type: String
+  #   Default: ""
+
+
+Resources:
+  CustomInstanceProfile0:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: "InstanceToInstance0"
+      Roles: !Ref InstanceRole # Required
+
+  CustomAMIBuildComponent0:
+    Type: AWS::ImageBuilder::Component
+    Properties:
+      Name: "CustomAMIBuildComponent0" # Required
+      Platform: "Linux" # Required
+      Version: "1.0.0" # Required
+      Description: "Disable firewalld if existed"
+      Data: |
+        name: 'disable firewalld'
+        description: 'disable firewalld'
+        schemaVersion: 1.0
+
+        phases:
+          - name: build
+            steps:
+              - name: InstallAWSCli
+                action: ExecuteBash
+                inputs:
+                  commands:
+                  - |
+                      #!/bin/bash 
+
+                      set -xe
+
+                      curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+                      sudo yum install zip unzip -y
+                      unzip awscliv2.zip
+                      sudo ./aws/install
+
+              - name: InstallStartEnableFirewalld
+                action: ExecuteBash
+                inputs:
+                  commands:
+                  - |
+                      #!/bin/bash 
+
+                      set -xe
+
+                      if systemctl list-units --all | awk '{print $1}' | grep -q -v firewalld; then
+                        echo "......Installing firewalld......"
+                        sudo yum install firewalld -y	
+                      fi
+
+                      echo "......Start firewalld......"
+                      systemctl start firewalld
+
+                      echo "......Enable firewalld......"
+                      systemctl enable firewalld
+
+                      echo "......Status firewalld......"
+                      systemctl is-active firewalld
+
+              - name: ApplyFirewalldRules
+                action: ExecuteBash
+                inputs:
+                  commands:
+                  - |
+                      #!/bin/bash 
+
+                      set -xe
+
+                      sudo yum install -y \
+                              bzip2 \
+                              bzip2-devel \
+                              gcc \
+                              git \
+                              libffi-devel \
+                              make \
+                              openssl-devel \
+                              patch \
+                              readline-devel \
+                              sqlite \
+                              sqlite-devel \
+                              tk-devel \
+                              xz \
+                              xz-devel \
+                              zlib-devel
+
+                      curl https://pyenv.run | bash
+
+                      echo 'export PYENV_ROOT="$HOME/.pyenv"' >> ~/.bash_profile
+                      echo 'export PATH="$PYENV_ROOT/bin:$PATH"' >> ~/.bash_profile
+                      echo -e 'if command -v pyenv 1>/dev/null 2>&1; then\n eval "$(pyenv init -)"\nfi' >> ~/.bash_profile
+
+                      source ~/.bash_profile
+
+                      pyenv install 3.10.0
+
+                      pyenv virtualenv 3.10.0 SecurityRulesToFirewalld
+
+                      pyenv activate SecurityRulesToFirewalld
+
+                      # fetch python script from S3
+                      # pip install -r requirements.txt
+                      # python main.py
+                      # ./apply-firewalld-rules.sh
+
+  CustomAMIRecipe0:
+    Type: AWS::ImageBuilder::ImageRecipe
+    Properties:
+      Name: "CustomAMIRecipe0" # Required
+      Version: "2.0.0" # Required
+      ParentImage: !Ref AMIId # Required
+      Components: # Required
+        - ComponentArn: !Ref CustomAMIBuildComponent0
+
+  CustomAMIInfra0:
+    Type: AWS::ImageBuilder::InfrastructureConfiguration
+    Properties:
+      Name: "CustomAMIInfra0" # Required
+      InstanceProfileName: !Ref CustomInstanceProfile0 # Required
+      InstanceTypes:
+        - t2.micro
+      SecurityGroupIds: !Ref SecurityGroups
+      TerminateInstanceOnFailure: true
+    DependsOn: CustomInstanceProfile0
+
+  CustomAMIDistribution0:
+    Type: AWS::ImageBuilder::DistributionConfiguration
+    Properties:
+      Name: 'CustomAMIDistribution0' # Required
+      Distributions: # Required
+        - Region: !Ref AWS::Region
+          AmiDistributionConfiguration: 
+            Name: 'CustomAMIFirewall-{{ imagebuilder:buildDate }}'
+            LaunchPermissionConfiguration: 
+               UserIds: !Ref AWSAccount
+
+  CustomAMIImage0:
+    Type: AWS::ImageBuilder::Image
+    Properties:
+      ImageRecipeArn: !Ref CustomAMIRecipe0 # Required
+      InfrastructureConfigurationArn: !Ref CustomAMIInfra0 # Required
+      DistributionConfigurationArn: !Ref CustomAMIDistribution0 # Required
+      ImageTestsConfiguration:
+        ImageTestsEnabled: false
+        TimeoutMinutes: 90
+
+Outputs:
+  CustomAMIID:
+    Description: "Custom AMI ID"
+    Value: !GetAtt CustomAMIImage0.ImageId
+  CustomAMIName:
+    Description: "Custom AMI Name"
+    Value: !GetAtt CustomAMIImage0.Name

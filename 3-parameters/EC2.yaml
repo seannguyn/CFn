@@ -1,0 +1,96 @@
+Parameters:
+  SecurityGroupDescription:
+    Description: SG description
+    Type: String
+
+  SecurityGroupPort:
+    Description: SG Port
+    Type: Number
+    MinValue: 1150
+    MaxValue: 65535
+
+  InstanceType:
+    Description: instance type
+    Type: String
+    Default: t2.small
+    AllowedValues:
+    - t1.nano
+    - t1.small
+    - t2.large
+    - t4.large
+    ConstraintDescription: must be valid EC2 instance type
+  
+  Password:
+    Description: password
+    Type: String
+    NoEcho: true
+
+  KeyPairName:
+    Description: Keypair
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+
+  SecurityGroupCIDR:
+    Description: SG CIDR
+    Type: String
+    Default: '0.0.0.0/0'
+    MinLenth: 9
+    MaxLength: 18
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+
+  Vpc:
+    Description: Vpc
+    Type: AWS::EC2::VPC::Id
+
+  Subnets:
+    Description: subents
+    Type: List<AWS::EC2::Subnet::Id>
+
+  SubnetCIDR:
+    Description: CIDR
+    Type: CommaDelimitedList
+    Default: '10.0.1.0/24, 10.0.2.0/24, 10.0.3.0/24'
+
+Resources:
+  MyEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      #we reference the InstanceType parameter
+      ImageId: "String"
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyPairName
+      # here we reference an internal CloudFormation resource
+      SubnetId: !Ref Subnet1
+
+  MySG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Ref SecurityGroupDescription # Required
+      SecurityGroupIngress:
+        - CidrIp: !Ref SecurityGroupCIDR
+          FromPort: !Ref SecurityGroupPort
+          ToPort: !Ref SecurityGroupPort
+          IpProtocol: tcp
+      VpcId: !Ref Vpc # Required
+
+  Subnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      # the select function allows us to select across a list
+      CidrBlock: !Select [0, !Ref SubnetCIDR]
+      VpcId: !Ref Vpc # Required
+
+  Subnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      # the select function allows us to select across a list
+      CidrBlock: !Select [1, !Ref SubnetCIDR]
+      VpcId: !Ref Vpc # Required
+
+  Subnet3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      # the select function allows us to select across a list
+      CidrBlock: !Select [2, !Ref SubnetCIDR]
+      VpcId: !Ref Vpc # Required
